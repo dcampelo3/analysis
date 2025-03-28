@@ -1,0 +1,12 @@
+Data cleaning log
+Original rows: 906642
+Cleaned rows: 906640
+Rows removed: 2
+
+Final data types:
+KEY_NRD                  float64
+HOSP_NRD                 float64
+APRDRG                   float64
+APRDRG_Risk_Mortality    float64
+APRDRG_Severity          float64
+dtype: object

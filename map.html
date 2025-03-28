@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NIS Hospital Data Analysis</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+    <script src="https://d3js.org/topojson.v3.min.js"></script>
+    <script src="https://d3js.org/d3-geo.v2.min.js"></script>
+    <style>
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .controls {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .tooltip {
+            position: absolute;
+            padding: 10px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            pointer-events: none;
+            font-size: 12px;
+        }
+
+        .legend {
+            margin-top: 20px;
+        }
+
+        .metric-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .visualization-container {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="controls">
+            <select id="metricSelector">
+                <option value="TOTCHG">Total Charges</option>
+                <option value="HOSP_BEDSIZE">Hospital Bed Size</option>
+                <option value="TOTAL_DISC">Total Discharges</option>
+                <option value="DRGVER">DRG Version</option>
+            </select>
+        </div>
+        <div class="visualization-container">
+            <div id="map"></div>
+            <div id="metrics"></div>
+        </div>
+    </div>
+
+    <script>
+        // Dummy data for the 9 census divisions
+        const dummyData = {
+            divisions: [
+                {
+                    id: 1,
+                    name: "New England",
+                    totalCharges: 5000000000,
+                    bedSize: 250,
+                    totalDischarges: 50000,
+                    drgVersions: 3,
+                    hospitals: 100,
+                    coordinates: [-71.5, 43.5]
+                },
+                {
+                    id: 2,
+                    name: "Middle Atlantic",
+                    totalCharges: 7500000000,
+                    bedSize: 300,
+                    totalDischarges: 75000,
+                    drgVersions: 4,
+                    hospitals: 150,
+                    coordinates: [-75.5, 42.5]
+                },
+                // Add more divisions here...
+            ]
+        };
+
+        // D3 Visualization setup
+        const width = 960;
+        const height = 600;
+        const margin = { top: 20, right: 20, bottom: 30, left: 40 };
+
+        // Create SVG
+        const svg = d3.select("#map")
+            .append("svg")
+            .attr("viewBox", `0 0 ${width} ${height}`)
+            .attr("preserveAspectRatio", "xMidYMid meet");
+
+        // Create projection
+        const projection = d3.geoAlbersUsa()
+            .translate([width / 2, height / 2])
+            .scale(1000);
+
+        // Create path generator
+        const path = d3.geoPath()
+            .projection(projection);
+
+        // Create color scales
+        const colorScales = {
+            TOTCHG: d3.scaleSequential(d3.interpolateBlues)
+                .domain([0, d3.max(dummyData.divisions, d => d.totalCharges)]),
+            HOSP_BEDSIZE: d3.scaleSequential(d3.interpolateGreens)
+                .domain([0, d3.max(dummyData.divisions, d => d.bedSize)]),
+            TOTAL_DISC: d3.scaleSequential(d3.interpolateOranges)
+                .domain([0, d3.max(dummyData.divisions, d => d.totalDischarges)]),
+            DRGVER: d3.scaleSequential(d3.interpolatePurples)
+                .domain([0, d3.max(dummyData.divisions, d => d.drgVersions)])
+        };
+
+        // Create tooltip
+        const tooltip = d3.select("body")
+            .append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+
+        function updateVisualization(metric) {
+            // Update circles
+            const circles = svg.selectAll("circle")
+                .data(dummyData.divisions);
+
+            circles.enter()
+                .append("circle")
+                .merge(circles)
+                .attr("cx", d => projection(d.coordinates)[0])
+                .attr("cy", d => projection(d.coordinates)[1])
+                .attr("r", d => Math.sqrt(getMetricValue(d, metric) / Math.PI) * 0.5)
+                .attr("fill", d => colorScales[metric](getMetricValue(d, metric)))
+                .attr("stroke", "#fff")
+                .attr("stroke-width", 1)
+                .on("mouseover", showTooltip)
+                .on("mouseout", hideTooltip)
+                .transition()
+                .duration(750);
+
+            circles.exit().remove();
+
+            // Update metrics panel
+            updateMetricsPanel(metric);
+        }
+
+        function getMetricValue(d, metric) {
+            switch(metric) {
+                case 'TOTCHG': return d.totalCharges;
+                case 'HOSP_BEDSIZE': return d.bedSize;
+                case 'TOTAL_DISC': return d.totalDischarges;
+                case 'DRGVER': return d.drgVersions;
+                default: return 0;
+            }
+        }
+
+        function showTooltip(event, d) {
+            const metric = d3.select("#metricSelector").property("value");
+            tooltip.transition()
+                .duration(200)
+                .style("opacity", .9);
+            tooltip.html(`
+                <strong>${d.name}</strong><br/>
+                Total Charges: $${d3.format(",")(d.totalCharges)}<br/>
+                Bed Size: ${d.bedSize}<br/>
+                Total Discharges: ${d3.format(",")(d.totalDischarges)}<br/>
+                DRG Versions: ${d.drgVersions}<br/>
+                Hospitals: ${d.hospitals}
+            `)
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 28) + "px");
+        }
+
+        function hideTooltip() {
+            tooltip.transition()
+                .duration(500)
+                .style("opacity", 0);
+        }
+
+        function updateMetricsPanel(metric) {
+            const metricsDiv = d3.select("#metrics");
+            
+            const totalValue = d3.sum(dummyData.divisions, d => getMetricValue(d, metric));
+            const avgValue = totalValue / dummyData.divisions.length;
+
+            metricsDiv.html(`
+                <div class="metric-card">
+                    <h3>Summary Statistics</h3>
+                    <p>Total: ${d3.format(",")(totalValue)}</p>
+                    <p>Average: ${d3.format(",")(avgValue)}</p>
+                    <p>Max: ${d3.format(",")(d3.max(dummyData.divisions, d => getMetricValue(d, metric)))}</p>
+                    <p>Min: ${d3.format(",")(d3.min(dummyData.divisions, d => getMetricValue(d, metric)))}</p>
+                </div>
+            `);
+        }
+
+        // Initialize visualization
+        d3.json("https://d3js.org/us-10m.v1.json").then(function(us) {
+            // Draw US map
+            svg.append("g")
+                .selectAll("path")
+                .data(topojson.feature(us, us.objects.states).features)
+                .enter()
+                .append("path")
+                .attr("d", path)
+                .attr("class", "state")
+                .attr("fill", "#ddd")
+                .attr("stroke", "#fff");
+
+            // Initial visualization
+            updateVisualization("TOTCHG");
+
+            // Add event listener for metric selection
+            d3.select("#metricSelector").on("change", function() {
+                updateVisualization(this.value);
+            });
+        });
+    </script>
+</body>
+</html>

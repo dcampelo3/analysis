@@ -105,30 +105,21 @@ def process_file(input_file, output_file):
         return False
 
 def main():
-    # Define dataset prefixes
-    datasets = ['NRD', 'NIS', 'KID', 'NEDS']
-    base_dir = 'data'
-    processed_dir = 'processed_data'
+    # Specific file path
+    input_file = r"C:\analysis\data\KID_2019\KID_2019_Severity.csv"
     
     # Create processed data directory
+    processed_dir = 'processed_data/KID_2019'
     os.makedirs(processed_dir, exist_ok=True)
     
-    # Process each dataset
-    for dataset in datasets:
-        dataset_dir = os.path.join(base_dir, f'{dataset}_2019')
-        if os.path.exists(dataset_dir):
-            logging.info(f"\nProcessing {dataset} dataset...")
-            
-            # Create processed dataset directory
-            processed_dataset_dir = os.path.join(processed_dir, f'{dataset}_2019')
-            os.makedirs(processed_dataset_dir, exist_ok=True)
-            
-            # Process each CSV file
-            for file in os.listdir(dataset_dir):
-                if file.endswith('.CSV') and not file.endswith('.backup'):
-                    input_file = os.path.join(dataset_dir, file)
-                    output_file = os.path.join(processed_dataset_dir, f'processed_{file}')
-                    process_file(input_file, output_file)
+    # Define output file path
+    output_file = os.path.join(processed_dir, 'processed_KID_2019_SEVERITY.csv')
+    
+    if os.path.exists(input_file):
+        logging.info(f"Processing file: {input_file}")
+        process_file(input_file, output_file)
+    else:
+        logging.error(f"Input file not found: {input_file}")
 
 if __name__ == "__main__":
     main() 

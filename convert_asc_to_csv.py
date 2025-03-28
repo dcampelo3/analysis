@@ -16,25 +16,29 @@ def get_delimiter(file_path, chunk_size=1024):
     return most_common[0] if most_common[1] > 0 else None
 
 def convert_asc_to_csv():
-    # Path to NIS_2019 folder
-    nis_folder = 'data/NIS_2019'
+    # Path to KID_2019 folder using absolute path
+    kid_folder = r'C:\analysis\data\KID_2019'
     
     # Check if folder exists
-    if not os.path.exists(nis_folder):
-        print(f"Error: {nis_folder} directory not found")
+    if not os.path.exists(kid_folder):
+        print(f"Error: {kid_folder} directory not found")
         return
     
     # Get all .ASC files in the directory
-    asc_files = [f for f in os.listdir(nis_folder) if f.endswith('.ASC')]
+    asc_files = [f for f in os.listdir(kid_folder) if f.endswith('.ASC')]
     
     if not asc_files:
-        print("No .ASC files found in the directory")
+        print(f"No .ASC files found in {kid_folder}")
+        # List all files in directory to help debug
+        print("\nFiles found in directory:")
+        for file in os.listdir(kid_folder):
+            print(f"- {file}")
         return
     
     for asc_file in asc_files:
-        asc_path = os.path.join(nis_folder, asc_file)
+        asc_path = os.path.join(kid_folder, asc_file)
         csv_filename = os.path.splitext(asc_file)[0] + '.csv'
-        csv_path = os.path.join(nis_folder, csv_filename)
+        csv_path = os.path.join(kid_folder, csv_filename)
         
         try:
             # Get file size for progress bar

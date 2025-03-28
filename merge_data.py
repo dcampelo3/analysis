@@ -4,6 +4,7 @@ from tqdm import tqdm
 import sys
 import logging
 from datetime import datetime
+import gc  # For garbage collection
 
 # Set up logging
 logging.basicConfig(
@@ -64,6 +65,8 @@ def read_csv_with_prefix(file_path, prefix):
 def get_processed_files(base_dir):
     """Get all processed CSV files"""
     csv_files = {}
+
+
     
     # Define dataset prefixes
     datasets = ['NRD', 'NIS', 'KID', 'NEDS']
@@ -78,75 +81,101 @@ def get_processed_files(base_dir):
     
     return csv_files
 
+def get_row_count(file_path, chunk_size=10000):
+    """Get total number of rows in a CSV file"""
+    total_rows = 0
+    for chunk in pd.read_csv(file_path, chunksize=chunk_size, usecols=[0]):
+        total_rows += len(chunk)
+    return total_rows
+
+def merge_and_save_chunks(file_paths, output_file, chunk_size=10000):
+    """Merge files chunk by chunk and save directly to output"""
+    try:
+        # Get total rows from first file (assuming it's one of the main files)
+        logging.info("Counting total rows...")
+        total_rows = get_row_count(file_paths[0])
+        logging.info(f"Total rows to process: {total_rows:,}")
+
+        # Initialize progress bar
+        with tqdm(total=total_rows, desc="Merging", unit="rows") as pbar:
+            # Initialize file readers
+            readers = [pd.read_csv(f, chunksize=chunk_size, low_memory=False) for f in file_paths]
+            first_chunk = True
+
+            while True:
+                try:
+                    # Read chunks from all files
+                    chunks = []
+                    for i, reader in enumerate(readers):
+                        try:
+                            chunk = next(reader)
+                            chunks.append(chunk)
+                        except StopIteration:
+                            # If a file is shorter, reset its reader
+                            readers[i] = pd.read_csv(file_paths[i], chunksize=chunk_size, low_memory=False)
+                            chunk = next(readers[i])
+                            chunks.append(chunk)
+
+                    # Merge chunks
+                    merged_chunk = pd.concat(chunks, axis=1)
+
+                    # Save merged chunk
+                    if first_chunk:
+                        merged_chunk.to_csv(output_file, index=False, mode='w')
+                        first_chunk = False
+                    else:
+                        merged_chunk.to_csv(output_file, index=False, mode='a', header=False)
+
+                    # Update progress
+                    pbar.update(len(merged_chunk))
+
+                    # Clear memory
+                    del chunks
+                    del merged_chunk
+                    gc.collect()
+
+                except StopIteration:
+                    break
+
+        return True
+
+    except Exception as e:
+        logging.error(f"Error during merge: {str(e)}", exc_info=True)
+        return False
+
 def main():
     processed_dir = 'processed_data'
-    file_mappings = get_processed_files(processed_dir)
-    
-    if not file_mappings:
-        logging.warning("No processed CSV files found! Please run interpolate_data.py first.")
+    output_file = 'combined_data.csv'
+    chunk_size = 10000  # Smaller chunk size for better memory management
+
+    # Get all processed CSV files
+    all_files = []
+    for root, dirs, files in os.walk(processed_dir):
+        for file in files:
+            if file.startswith('processed_') and file.endswith('.CSV'):
+                all_files.append(os.path.join(root, file))
+
+    if not all_files:
+        logging.error("No processed CSV files found!")
         return
-    
-    logging.info("Found the following processed files:")
-    for file_path in file_mappings:
-        logging.info(f"- {file_path}")
-    
-    all_dataframes = []
-    row_counts = {}
-    
-    # Process each file
-    for file_path, prefix in file_mappings.items():
-        if os.path.exists(file_path):
-            try:
-                df = read_csv_with_prefix(file_path, prefix)
-                row_counts[file_path] = len(df)
-                all_dataframes.append(df)
-            except Exception as e:
-                logging.error(f"Error processing {file_path}: {str(e)}")
-        else:
-            logging.warning(f"File not found - {file_path}")
-    
-    # Combine all dataframes
-    if all_dataframes:
-        logging.info("\nMerging all dataframes...")
-        try:
-            # Print row count information
-            logging.info("\nRow counts in each file:")
-            for file_path, count in row_counts.items():
-                logging.info(f"{file_path}: {count:,} rows")
-            
-            # Merge dataframes with progress indication
-            logging.info("Performing merge operation...")
-            final_df = pd.concat(all_dataframes, axis=1)
-            
-            # Save to CSV
-            output_file = 'combined_data.csv'
-            logging.info(f"Saving to {output_file}...")
-            
-            # Write to CSV in chunks with progress bar
-            chunk_size = 100000
-            total_chunks = len(final_df) // chunk_size + 1
-            
-            with tqdm(total=total_chunks, desc="Saving", unit="chunks") as pbar:
-                for i in range(0, len(final_df), chunk_size):
-                    chunk = final_df.iloc[i:i+chunk_size]
-                    if i == 0:
-                        chunk.to_csv(output_file, index=False, mode='w')
-                    else:
-                        chunk.to_csv(output_file, index=False, mode='a', header=False)
-                    pbar.update(1)
-            
-            # Log final statistics
-            final_size = get_file_size(output_file)
-            logging.info(f"\nProcess completed successfully!")
-            logging.info(f"Combined data saved to: {output_file}")
-            logging.info(f"Final file size: {final_size:.2f} GB")
-            logging.info(f"Total columns: {len(final_df.columns):,}")
-            logging.info(f"Total rows: {len(final_df):,}")
-            
-        except Exception as e:
-            logging.error(f"Error while merging or saving data: {str(e)}", exc_info=True)
+
+    logging.info("Found the following files:")
+    for file in all_files:
+        logging.info(f"- {file}")
+
+    # Sort files so larger files come first
+    all_files.sort(key=lambda x: os.path.getsize(x), reverse=True)
+
+    logging.info("\nStarting merge operation...")
+    success = merge_and_save_chunks(all_files, output_file, chunk_size)
+
+    if success:
+        final_size = os.path.getsize(output_file) / (1024 * 1024 * 1024)  # Size in GB
+        logging.info(f"\nMerge completed successfully!")
+        logging.info(f"Combined data saved to: {output_file}")
+        logging.info(f"Final file size: {final_size:.2f} GB")
     else:
-        logging.warning("No data to process!")
+        logging.error("Merge operation failed!")
 
 if __name__ == "__main__":
     main() 
